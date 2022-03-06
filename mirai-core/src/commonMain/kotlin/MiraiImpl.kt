@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2021 Mamoe Technologies and contributors.
+ * Copyright 2019-2022 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -15,7 +15,6 @@ import io.ktor.client.features.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.util.*
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.core.discardExact
 import kotlinx.io.core.readBytes
 import kotlinx.serialization.json.Json
@@ -33,10 +32,10 @@ import net.mamoe.mirai.internal.contact.info.FriendInfoImpl
 import net.mamoe.mirai.internal.contact.info.FriendInfoImpl.Companion.impl
 import net.mamoe.mirai.internal.contact.info.MemberInfoImpl
 import net.mamoe.mirai.internal.contact.info.StrangerInfoImpl.Companion.impl
+import net.mamoe.mirai.internal.event.EventChannelToEventDispatcherAdapter
 import net.mamoe.mirai.internal.message.*
 import net.mamoe.mirai.internal.message.DeepMessageRefiner.refineDeep
 import net.mamoe.mirai.internal.network.components.EventDispatcher
-import net.mamoe.mirai.internal.network.components.EventDispatcherScopeFlag
 import net.mamoe.mirai.internal.network.highway.ChannelKind
 import net.mamoe.mirai.internal.network.highway.ResourceKind
 import net.mamoe.mirai.internal.network.highway.tryDownload
@@ -57,7 +56,6 @@ import net.mamoe.mirai.internal.network.protocol.packet.sendAndExpect
 import net.mamoe.mirai.internal.network.protocol.packet.summarycard.SummaryCard
 import net.mamoe.mirai.internal.network.psKey
 import net.mamoe.mirai.internal.network.sKey
-import net.mamoe.mirai.internal.utils.ImagePatcher
 import net.mamoe.mirai.internal.utils.MiraiProtocolInternal
 import net.mamoe.mirai.internal.utils.crypto.TEA
 import net.mamoe.mirai.internal.utils.io.serialization.loadAs
@@ -303,17 +301,13 @@ internal open class MiraiImpl : IMirai, LowLevelApiAccessor {
         solveInvitedJoinGroupRequest(event, accept = false)
 
     override suspend fun broadcastEvent(event: Event) {
-        if (currentCoroutineContext()[EventDispatcherScopeFlag] != null) {
-            // called by [EventDispatcher]
-            return super.broadcastEvent(event)
-        }
         if (event is BotEvent) {
             val bot = event.bot
             if (bot is AbstractBot) {
                 bot.components[EventDispatcher].broadcast(event)
             }
         } else {
-            super.broadcastEvent(event)
+            EventChannelToEventDispatcherAdapter.instance.callListeners(event)
         }
     }
 
