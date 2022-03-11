@@ -84,8 +84,8 @@ mcit_test.configure {
 }
 
 val crtProject = project
-subprojects {
-    if (project.parent == crtProject) {
+allprojects {
+    if (project != crtProject) {
         project.afterEvaluate {
             val tk = tasks.named<Jar>("jar")
             subplugins.add(tk)
