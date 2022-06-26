@@ -85,7 +85,7 @@ rootProject.projectDir
 // endregion
 
 includeConsoleProject(":mirai-console-compiler-common", "tools/compiler-common")
-includeConsoleProject(":mirai-console-intellij", "tools/intellij-plugin")
+//includeConsoleProject(":mirai-console-intellij", "tools/intellij-plugin")
 includeConsoleProject(":mirai-console-gradle", "tools/gradle-plugin")
 
 @Suppress("ConstantConditionIf")
