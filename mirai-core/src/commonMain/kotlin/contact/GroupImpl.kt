@@ -13,6 +13,7 @@
 package net.mamoe.mirai.internal.contact
 
 import kotlinx.atomicfu.atomic
+import net.mamoe.mirai.Bot
 import net.mamoe.mirai.LowLevelApi
 import net.mamoe.mirai.Mirai
 import net.mamoe.mirai.contact.*
@@ -26,9 +27,15 @@ import net.mamoe.mirai.internal.QQAndroidBot
 import net.mamoe.mirai.internal.contact.announcement.AnnouncementsImpl
 import net.mamoe.mirai.internal.contact.file.RemoteFilesImpl
 import net.mamoe.mirai.internal.contact.info.MemberInfoImpl
-import net.mamoe.mirai.internal.message.*
+import net.mamoe.mirai.internal.message.contextualBugReportException
+import net.mamoe.mirai.internal.message.data.OfflineAudioImpl
+import net.mamoe.mirai.internal.message.image.OfflineGroupImage
+import net.mamoe.mirai.internal.message.image.calculateImageInfo
+import net.mamoe.mirai.internal.message.image.getIdByImageType
+import net.mamoe.mirai.internal.message.image.getImageTypeById
+import net.mamoe.mirai.internal.message.protocol.outgoing.GroupMessageProtocolStrategy
+import net.mamoe.mirai.internal.message.protocol.outgoing.MessageProtocolStrategy
 import net.mamoe.mirai.internal.network.components.BdhSession
-import net.mamoe.mirai.internal.network.handler.NetworkHandler
 import net.mamoe.mirai.internal.network.handler.logger
 import net.mamoe.mirai.internal.network.highway.ChannelKind
 import net.mamoe.mirai.internal.network.highway.Highway
@@ -43,7 +50,6 @@ import net.mamoe.mirai.internal.network.protocol.packet.chat.voice.PttStore
 import net.mamoe.mirai.internal.network.protocol.packet.chat.voice.audioCodec
 import net.mamoe.mirai.internal.network.protocol.packet.chat.voice.voiceCodec
 import net.mamoe.mirai.internal.network.protocol.packet.list.ProfileService
-import net.mamoe.mirai.internal.network.protocol.packet.sendAndExpect
 import net.mamoe.mirai.internal.utils.GroupPkgMsgParsingCache
 import net.mamoe.mirai.internal.utils.ImagePatcher
 import net.mamoe.mirai.internal.utils.RemoteFileImpl
@@ -56,7 +62,6 @@ import net.mamoe.mirai.utils.*
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.contracts.contract
 import kotlin.coroutines.CoroutineContext
-import kotlin.time.ExperimentalTime
 
 internal fun GroupImpl.Companion.checkIsInstance(instance: Group) {
     contract { returns() implies (instance is GroupImpl) }
@@ -110,6 +115,9 @@ private val logger by lazy {
     MiraiLogger.Factory.create(GroupImpl::class.java, "Group")
 }
 
+internal fun Bot.nickIn(context: Contact): String =
+    if (context is Group) context.botAsMember.nameCardOrNick else bot.nick
+
 @Suppress("PropertyName")
 internal class GroupImpl constructor(
     bot: QQAndroidBot,
@@ -145,21 +153,21 @@ internal class GroupImpl constructor(
 
     val groupPkgMsgParsingCache = GroupPkgMsgParsingCache()
 
+    private val messageProtocolStrategy: MessageProtocolStrategy<GroupImpl> = GroupMessageProtocolStrategy(this)
+
     override suspend fun quit(): Boolean {
         check(botPermission != MemberPermission.OWNER) { "An owner cannot quit from a owning group" }
 
         if (!bot.groups.delegate.remove(this)) {
             return false
         }
-        bot.network.run {
-            val response: ProfileService.GroupMngReq.GroupMngReqResponse = ProfileService.GroupMngReq(
-                bot.client,
-                this@GroupImpl.id
-            ).sendAndExpect()
-            check(response.errorCode == 0) {
-                "Group.quit failed: $response".also {
-                    bot.groups.delegate.add(this@GroupImpl)
-                }
+
+        val response: ProfileService.GroupMngReq.GroupMngReqResponse = bot.network.sendAndExpect(
+            ProfileService.GroupMngReq(bot.client, this@GroupImpl.id), 5000, 2
+        )
+        check(response.errorCode == 0) {
+            "Group.quit failed: $response".also {
+                bot.groups.delegate.add(this@GroupImpl)
             }
         }
         BotLeaveEvent.Active(this).broadcast()
@@ -176,29 +184,15 @@ internal class GroupImpl constructor(
     }
 
     override suspend fun sendMessage(message: Message): MessageReceipt<Group> {
-        val isMiraiInternal = if (message is MessageChain) {
-            message.anyIsInstance<MiraiInternalMessageFlag>()
-        } else false
-
-        require(isMiraiInternal || !message.isContentEmpty()) { "message is empty" }
         check(!isBotMuted) { throw BotIsBeingMutedException(this, message) }
-
-        val chain = broadcastMessagePreSendEvent(message, isMiraiInternal, ::GroupMessagePreSendEvent)
-
-        val result = GroupSendMessageHandler(this)
-            .runCatching { sendMessage(message, chain, isMiraiInternal, SendMessageStep.FIRST) }
-
-        if (result.isSuccess) {
-            // logMessageSent(result.getOrNull()?.source?.plus(chain) ?: chain) // log with source
-            logMessageSent(chain)
-        }
-        if (!isMiraiInternal) {
-            GroupMessagePostSendEvent(this, chain, result.exceptionOrNull(), result.getOrNull()).broadcast()
-        }
-        return result.getOrThrow()
+        return sendMessageImpl(
+            message,
+            messageProtocolStrategy,
+            ::GroupMessagePreSendEvent,
+            ::GroupMessagePostSendEvent.cast()
+        )
     }
 
-    @OptIn(ExperimentalTime::class)
     override suspend fun uploadImage(resource: ExternalResource): Image = resource.withAutoClose {
         if (BeforeImageUploadEvent(this, resource).broadcast().isCancelled) {
             throw EventCancelledException("cancelled by BeforeImageUploadEvent.ToGroup")
@@ -210,8 +204,9 @@ internal class GroupImpl constructor(
         }
 
         val imageInfo = runBIO { resource.calculateImageInfo() }
-        bot.network.run<NetworkHandler, Image> {
-            val response: ImgStore.GroupPicUp.Response = ImgStore.GroupPicUp(
+
+        val response: ImgStore.GroupPicUp.Response = bot.network.sendAndExpect(
+            ImgStore.GroupPicUp(
                 bot.client,
                 uin = bot.id,
                 groupCode = id,
@@ -222,60 +217,60 @@ internal class GroupImpl constructor(
                 picHeight = imageInfo.height,
                 picType = getIdByImageType(imageInfo.imageType),
                 originalPic = 1
-            ).sendAndExpect()
+            ), 5000, 2
+        )
 
-            when (response) {
-                is ImgStore.GroupPicUp.Response.Failed -> {
-                    ImageUploadEvent.Failed(this@GroupImpl, resource, response.resultCode, response.message).broadcast()
-                    if (response.message == "over file size max") throw OverFileSizeMaxException()
-                    error("upload group image failed with reason ${response.message}")
-                }
-                is ImgStore.GroupPicUp.Response.FileExists -> {
-                    val resourceId = resource.calculateResourceId()
-                    return response.fileInfo.run {
-                        OfflineGroupImage(
-                            imageId = resourceId,
-                            height = fileHeight,
-                            width = fileWidth,
-                            imageType = getImageTypeById(fileType),
-                            size = resource.size
-                        )
-                    }
-                        .also {
-                            it.fileId = response.fileId.toInt()
-                        }
-                        .also { it.putIntoCache() }
-                        .also { ImageUploadEvent.Succeed(this@GroupImpl, resource, it).broadcast() }
-                }
-                is ImgStore.GroupPicUp.Response.RequireUpload -> {
-                    // val servers = response.uploadIpList.zip(response.uploadPortList)
-                    Highway.uploadResourceBdh(
-                        bot = bot,
-                        resource = resource,
-                        kind = GROUP_IMAGE,
-                        commandId = 2,
-                        initialTicket = response.uKey,
-                        noBdhAwait = true,
-                        fallbackSession = {
-                            BdhSession(
-                                EMPTY_BYTE_ARRAY, EMPTY_BYTE_ARRAY,
-                                ssoAddresses = response.uploadIpList.zip(response.uploadPortList).toMutableSet(),
-                            )
-                        },
+        when (response) {
+            is ImgStore.GroupPicUp.Response.Failed -> {
+                ImageUploadEvent.Failed(this@GroupImpl, resource, response.resultCode, response.message).broadcast()
+                if (response.message == "over file size max") throw OverFileSizeMaxException()
+                error("upload group image failed with reason ${response.message}")
+            }
+            is ImgStore.GroupPicUp.Response.FileExists -> {
+                val resourceId = resource.calculateResourceId()
+                return response.fileInfo.run {
+                    OfflineGroupImage(
+                        imageId = resourceId,
+                        height = fileHeight,
+                        width = fileWidth,
+                        imageType = getImageTypeById(fileType) ?: ImageType.UNKNOWN,
+                        size = resource.size
                     )
-
-                    return imageInfo.run {
-                        OfflineGroupImage(
-                            imageId = resource.calculateResourceId(),
-                            width = width,
-                            height = height,
-                            imageType = imageType,
-                            size = resource.size
-                        )
-                    }.also { it.fileId = response.fileId.toInt() }
-                        .also { it.putIntoCache() }
-                        .also { ImageUploadEvent.Succeed(this@GroupImpl, resource, it).broadcast() }
                 }
+                    .also {
+                        it.fileId = response.fileId.toInt()
+                    }
+                    .also { it.putIntoCache() }
+                    .also { ImageUploadEvent.Succeed(this@GroupImpl, resource, it).broadcast() }
+            }
+            is ImgStore.GroupPicUp.Response.RequireUpload -> {
+                // val servers = response.uploadIpList.zip(response.uploadPortList)
+                Highway.uploadResourceBdh(
+                    bot = bot,
+                    resource = resource,
+                    kind = GROUP_IMAGE,
+                    commandId = 2,
+                    initialTicket = response.uKey,
+                    noBdhAwait = true,
+                    fallbackSession = {
+                        BdhSession(
+                            EMPTY_BYTE_ARRAY, EMPTY_BYTE_ARRAY,
+                            ssoAddresses = response.uploadIpList.zip(response.uploadPortList).toMutableSet(),
+                        )
+                    },
+                )
+
+                return imageInfo.run {
+                    OfflineGroupImage(
+                        imageId = resource.calculateResourceId(),
+                        width = width,
+                        height = height,
+                        imageType = imageType,
+                        size = resource.size
+                    )
+                }.also { it.fileId = response.fileId.toInt() }
+                    .also { it.putIntoCache() }
+                    .also { ImageUploadEvent.Succeed(this@GroupImpl, resource, it).broadcast() }
             }
         }
     }
@@ -300,8 +295,8 @@ internal class GroupImpl constructor(
                     res.voiceCodec,
                     ""
                 )
+            }
         }
-    }
 
     private suspend fun uploadAudioResource(resource: ExternalResource) {
         kotlin.runCatching {
@@ -314,7 +309,7 @@ internal class GroupImpl constructor(
                     .toByteArray(Cmd0x388.ReqBody.serializer()),
             )
         }.recoverCatchingSuppressed {
-            when (val resp = PttStore.GroupPttUp(bot.client, bot.id, id, resource).sendAndExpect(bot)) {
+            when (val resp = bot.network.sendAndExpect(PttStore.GroupPttUp(bot.client, bot.id, id, resource))) {
                 is PttStore.GroupPttUp.Response.RequireUpload -> {
                     tryServersUpload(
                         bot,
@@ -354,14 +349,14 @@ internal class GroupImpl constructor(
 
     override suspend fun setEssenceMessage(source: MessageSource): Boolean {
         checkBotPermission(MemberPermission.ADMINISTRATOR)
-        val result = bot.network.run {
+        val result = bot.network.sendAndExpect(
             TroopEssenceMsgManager.SetEssence(
                 bot.client,
                 this@GroupImpl.uin,
                 source.internalIds.first(),
                 source.ids.first()
-            ).sendAndExpect()
-        }
+            ), 5000, 2
+        )
         return result.success
     }
 

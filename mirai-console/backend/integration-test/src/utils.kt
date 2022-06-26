@@ -9,16 +9,17 @@
 
 package net.mamoe.console.integrationtest
 
+import net.mamoe.mirai.console.internal.plugin.ConsoleJvmPluginTestFailedError
 import org.junit.jupiter.api.fail
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import java.io.File
-import java.util.UUID
+import java.util.*
 
 internal fun readStringListFromEnv(key: String): MutableList<String> {
-    val size = System.getenv(key)!!.toInt()
+    val size = System.getenv(key)?.toInt() ?: 0
     val rsp = mutableListOf<String>()
     for (i in 0 until size) {
         rsp.add(System.getenv("${key}_$i")!!)
@@ -39,6 +40,26 @@ public fun File.assertNotExists() {
         fail { "Except ${this.absolutePath} not exists but this file exists in disk" }
     }
 }
+
+public fun assertClassSame(expected: Class<*>?, actually: Class<*>?) {
+    fun vt(c: Class<*>?): String {
+        if (c == null) return "<null>"
+        return "$c from ${c.classLoader}"
+    }
+    if (expected === actually) return
+    fail {
+        "Class not same:\n" +
+                "Class excepted: ${vt(expected)}\n" +
+                "Class actually: ${vt(actually)}"
+    }
+}
+
+public fun forceFail(
+    msg: String? = null,
+    cause: Throwable? = null,
+): Nothing {
+    throw ConsoleJvmPluginTestFailedError(msg, cause)
+}
 // endregion
 
 // region JVM Utils
@@ -48,7 +69,7 @@ public val vmClassfileVersion: Int = runCatching {
     classobj.version
 }.recoverCatching {
     val ccl = object : ClassLoader(null) {
-        fun canLoad(ver: Int) : Boolean{
+        fun canLoad(ver: Int): Boolean {
             val klass = ClassWriter(ClassWriter.COMPUTE_MAXS)
             val cname =
                 "net/mamoe/console/integrationtest/vtest/C${ver}_${System.currentTimeMillis()}_${UUID.randomUUID()}"

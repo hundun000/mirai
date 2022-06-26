@@ -21,6 +21,7 @@ import net.mamoe.mirai.internal.network.handler.selector.NetworkHandlerSelector
 import net.mamoe.mirai.internal.network.handler.state.StateObserver
 import net.mamoe.mirai.internal.network.protocol.packet.IncomingPacket
 import net.mamoe.mirai.internal.network.protocol.packet.OutgoingPacket
+import net.mamoe.mirai.internal.network.protocol.packet.OutgoingPacketWithRespType
 import net.mamoe.mirai.internal.utils.SingleEntrantLock
 import net.mamoe.mirai.internal.utils.fromMiraiLogger
 import net.mamoe.mirai.internal.utils.subLogger
@@ -43,6 +44,11 @@ internal abstract class NetworkHandlerSupport(
             .plus(CoroutineExceptionHandler.fromMiraiLogger(logger))
 
     protected abstract fun initialState(): BaseStateImpl
+
+    /**
+     * It's not guaranteed whether this function sends the packet in-place or launches a coroutine for it.
+     * Caller should not rely on this property.
+     */
     protected abstract suspend fun sendPacketImpl(packet: OutgoingPacket)
 
     protected fun collectUnknownPacket(raw: RawIncomingPacket) {
@@ -88,7 +94,7 @@ internal abstract class NetworkHandlerSupport(
         }
     }
 
-    final override suspend fun sendAndExpect(packet: OutgoingPacket, timeout: Long, attempts: Int): Packet? {
+    final override suspend fun <P : Packet?> sendAndExpect(packet: OutgoingPacket, timeout: Long, attempts: Int): P {
         require(attempts >= 1) { "attempts must be at least 1." }
         val listener = PacketListener(packet.commandName, packet.sequenceId)
         packetListeners.add(listener)
@@ -98,9 +104,10 @@ internal abstract class NetworkHandlerSupport(
                     context[PacketLoggingStrategy].logSent(logger, packet)
                     sendPacketImpl(packet)
                     try {
+                        @Suppress("UNCHECKED_CAST")
                         return withTimeout(timeout) {
                             listener.result.await()
-                        }
+                        } as P
                     } catch (e: TimeoutCancellationException) {
                         collectException(e)
                     }
@@ -116,6 +123,12 @@ internal abstract class NetworkHandlerSupport(
             }
         }
     }
+
+    final override suspend fun <P : Packet?> sendAndExpect(
+        packet: OutgoingPacketWithRespType<P>,
+        timeout: Long,
+        attempts: Int
+    ): P = sendAndExpect(packet as OutgoingPacket, timeout, attempts)
 
     final override suspend fun sendWithoutExpect(packet: OutgoingPacket) {
         context[PacketLoggingStrategy].logSent(logger, packet)

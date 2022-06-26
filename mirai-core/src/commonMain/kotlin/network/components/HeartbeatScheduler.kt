@@ -13,11 +13,15 @@ import kotlinx.coroutines.*
 import net.mamoe.mirai.internal.network.component.ComponentKey
 import net.mamoe.mirai.internal.network.component.ComponentStorage
 import net.mamoe.mirai.internal.network.handler.NetworkHandlerSupport
+import net.mamoe.mirai.internal.network.handler.selector.NetworkException
 import net.mamoe.mirai.internal.network.handler.selector.PacketTimeoutException
 import net.mamoe.mirai.utils.BotConfiguration.HeartbeatStrategy.*
 import net.mamoe.mirai.utils.MiraiLogger
 import net.mamoe.mirai.utils.info
 
+/**
+ * Accepts any kinds of exceptions. A [NetworkException] can control whether this error is recoverable, while any other ones are regarded as unexpected failure.
+ */
 internal typealias HeartbeatFailureHandler = (name: String, e: Throwable) -> Unit
 
 /**
@@ -114,18 +118,26 @@ internal class TimeBasedHeartbeatSchedulerImpl(
                 }
 
                 try {
-                    val result = withTimeoutOrNull(timeout()) { action() }
+                    var cause: Throwable? = null
+                    val result = try {
+                        withTimeoutOrNull(timeout()) { action() }
+                    } catch (e: TimeoutCancellationException) {
+                        // from `action`
+                        cause = e
+                        null
+                    }
                     if (result == null) {
                         onHeartFailure(
                             name,
                             PacketTimeoutException(
                                 "$coroutineName: Timeout receiving action response",
-                                CancellationException("Dummy exception for stacktrace")
+                                cause // cause is TimeoutCancellationException from `action`
                             ) // This is a NetworkException that is recoverable
                         )
                         return@async
                     }
                 } catch (e: Throwable) {
+                    // catch other errors in `action`, should not happen
                     onHeartFailure(
                         name,
                         IllegalStateException("$coroutineName: Internal error: caught unexpected exception", e)

@@ -1,10 +1,10 @@
 /*
- * Copyright 2019-2021 Mamoe Technologies and contributors.
+ * Copyright 2019-2022 Mamoe Technologies and contributors.
  *
- *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
  *
- *  https://github.com/mamoe/mirai/blob/master/LICENSE
+ * https://github.com/mamoe/mirai/blob/dev/LICENSE
  */
 
 @file:Suppress("EXPOSED_SUPER_CLASS")
@@ -22,6 +22,7 @@ import net.mamoe.mirai.console.permission.RootPermission
 import net.mamoe.mirai.contact.*
 import net.mamoe.mirai.message.data.*
 import net.mamoe.mirai.utils.MiraiExperimentalApi
+import net.mamoe.mirai.utils.chineseLength
 import java.time.temporal.TemporalAccessor
 
 
@@ -142,11 +143,10 @@ public object ExistingBotValueArgumentParser : InternalCommandValueArgumentParse
  */
 public object ExistingFriendValueArgumentParser : InternalCommandValueArgumentParserExtensions<Friend>() {
     private val syntax = """
-        - `botId.friendId`
-        - `botId.friendNick` (模糊搜索, 寻找最优匹配)
-        - `~` (指代指令调用人自己作为好友. 仅聊天环境下)
+        - 机器人号码.好友号码
+        - ~ (指代指令调用人自己作为好友. 仅聊天环境下)
         
-        当只登录了一个 [Bot] 时, `botId` 参数可省略
+        当只登录了一个机器人时，机器人号码可省略
     """.trimIndent()
 
     public override fun parse(raw: String, sender: CommandSender): Friend {
@@ -181,9 +181,10 @@ public object ExistingFriendValueArgumentParser : InternalCommandValueArgumentPa
  */
 public object ExistingGroupValueArgumentParser : InternalCommandValueArgumentParserExtensions<Group>() {
     private val syntax = """
-        - `botId.groupId`
-        - `~` (指代指令调用人自己所在群. 仅群聊天环境下)
-        当只登录了一个 [Bot] 时, `botId` 参数可省略
+        - 机器人号码.群号码
+        - ~    (指代指令调用人自己所在群. 仅群聊天环境下)
+        
+        当只登录了一个机器人时，机器人号码可省略
     """.trimIndent()
 
     public override fun parse(raw: String, sender: CommandSender): Group {
@@ -208,14 +209,14 @@ public object ExistingGroupValueArgumentParser : InternalCommandValueArgumentPar
 
 public object ExistingUserValueArgumentParser : InternalCommandValueArgumentParserExtensions<User>() {
     private val syntax: String = """
-         - `botId.groupId.memberId`
-         - `botId.groupId.memberCard` (模糊搜索, 寻找最优匹配)
-         - `~` (指代指令调用人自己. 仅聊天环境下)
-         - `botId.groupId.$` (随机成员. )
-         - `botId.friendId
+         - 机器人号码.群号码.群员号码
+         - 机器人号码.群号码.群员名片   (模糊搜索)
+         - ~   (指代指令调用人自己. 仅聊天环境下)
+         - 机器人号码.群号码.$   (随机成员)
+         - 机器人号码.好友号码
          
-         当处于一个群内时, `botId` 和 `groupId` 参数都可省略
-         当只登录了一个 [Bot] 时, `botId` 参数可省略
+         当处于一个群内时，机器人号码和群号码参数都可省略
+         当只登录了一个机器人时，机器人号码可省略
     """.trimIndent()
 
     override fun parse(raw: String, sender: CommandSender): User {
@@ -262,14 +263,15 @@ public object ExistingUserValueArgumentParser : InternalCommandValueArgumentPars
 
 public object ExistingContactValueArgumentParser : InternalCommandValueArgumentParserExtensions<Contact>() {
     private val syntax: String = """
-         - `botId.groupId.memberId`
-         - `botId.groupId.memberCard` (模糊搜索, 寻找最优匹配)
-         - `botId.groupId.$` (随机成员. 仅聊天环境下)
-         - `botId.friendId
-         - `botId.groupId`
+         - 机器人号码.群号码.群员号码
+         - 机器人号码.群号码.群员名片    (模糊搜索)
+         - ~    (指代指令调用人自己. 仅聊天环境下)
+         - 机器人号码.群号码.$    (随机成员)
+         - 机器人号码.好友号码
+         - 机器人号码.群号码
          
-         当处于一个群内时, `botId` 和 `groupId` 参数都可省略
-         当只登录了一个 [Bot] 时, `botId` 参数可省略
+         当处于一个群内时，机器人号码和群号码参数都可省略
+         当只登录了一个机器人时，机器人号码可省略
     """.trimIndent()
 
     override fun parse(raw: String, sender: CommandSender): Contact {
@@ -291,7 +293,7 @@ public object ExistingContactValueArgumentParser : InternalCommandValueArgumentP
         }.recoverCatching {
             return parseFunction2(raw, sender)
         }.getOrElse {
-            illegalArgument("无法推断目标好友, 群或群员. \n$syntax")
+            illegalArgument("无法推断目标好友、群或群员。 \n$syntax")
         }
     }
 }
@@ -302,13 +304,13 @@ public object ExistingContactValueArgumentParser : InternalCommandValueArgumentP
  */
 public object ExistingMemberValueArgumentParser : InternalCommandValueArgumentParserExtensions<Member>() {
     private val syntax: String = """
-         - `botId.groupId.memberId`
-         - `botId.groupId.memberCard` (模糊搜索, 寻找最优匹配)
-         - `~` (指代指令调用人自己. 仅聊天环境下)
-         - `groupId.$` (随机成员)
+         - 机器人号码.群号码.群员号码
+         - 机器人号码.群号码.群员名片    (模糊搜索)
+         - ~    (指代指令调用人自己. 仅聊天环境下)
+         - 机器人号码.群号码.${'$'}    (随机成员)
          
-         当处于一个群内时, `botId` 和 `groupId` 参数都可省略
-         当只登录了一个 [Bot] 时, `botId` 参数可省略
+         当处于一个群内时，机器人号码和群号码参数都可省略
+         当只登录了一个机器人时，机器人号码可省略
     """.trimIndent()
 
     public override fun parse(raw: String, sender: CommandSender): Member {
@@ -570,20 +572,11 @@ internal fun Double.toDecimalPlace(n: Int): String = "%.${n}f".format(this)
 internal fun String.truncate(lengthLimit: Int, replacement: String = "..."): String = buildString {
     var lengthSum = 0
     for (char in this@truncate) {
-        lengthSum += char.chineseLength()
+        lengthSum += char.chineseLength
         if (lengthSum > lengthLimit) {
             append(replacement)
             return toString()
         } else append(char)
     }
     return toString()
-}
-
-internal fun Char.chineseLength(): Int {
-    return when (this) {
-        in '\u0000'..'\u007F' -> 1
-        in '\u0080'..'\u07FF' -> 2
-        in '\u0800'..'\uFFFF' -> 2
-        else -> 2
-    }
 }

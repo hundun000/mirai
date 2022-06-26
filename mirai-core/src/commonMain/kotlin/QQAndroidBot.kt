@@ -11,9 +11,9 @@
 package net.mamoe.mirai.internal
 
 import kotlinx.atomicfu.atomic
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import net.mamoe.mirai.Bot
+import net.mamoe.mirai.event.broadcast
 import net.mamoe.mirai.event.events.BotOfflineEvent
 import net.mamoe.mirai.event.events.BotOnlineEvent
 import net.mamoe.mirai.event.events.BotReloginEvent
@@ -47,11 +47,13 @@ import net.mamoe.mirai.internal.network.notice.priv.OtherClientNoticeProcessor
 import net.mamoe.mirai.internal.network.notice.priv.PrivateMessageProcessor
 import net.mamoe.mirai.internal.network.protocol.packet.login.StatSvc
 import net.mamoe.mirai.internal.utils.ImagePatcher
+import net.mamoe.mirai.internal.utils.ImagePatcherImpl
 import net.mamoe.mirai.internal.utils.subLogger
 import net.mamoe.mirai.utils.BotConfiguration
 import net.mamoe.mirai.utils.MiraiLogger
 import net.mamoe.mirai.utils.lateinitMutableProperty
 import kotlin.contracts.contract
+import kotlin.time.Duration.Companion.seconds
 
 internal fun Bot.asQQAndroidBot(): QQAndroidBot {
     contract {
@@ -73,7 +75,9 @@ internal open class QQAndroidBot constructor(
         if (!this.isActive) return
         runBlocking {
             try { // this may not be very good but
-                components[SsoProcessor].logout(network)
+                withTimeoutOrNull(5.seconds) {
+                    components[SsoProcessor].logout(network)
+                }
             } catch (ignored: Exception) {
             }
         }
@@ -148,7 +152,17 @@ internal open class QQAndroidBot constructor(
                     cause is BotClosedByEvent -> {}
                     else -> {
                         // any other unexpected exceptions considered as an error
-                        runBlocking { eventDispatcher.broadcast(BotOfflineEvent.Active(bot, cause)) }
+
+                        // When bot is closed, eventDispatcher.isActive will be false.
+                        // While in TestEventDispatcherImpl, eventDispatcher.isActive will always be true to enable catching the event.
+                        if (eventDispatcher.isActive) {
+                            eventDispatcher.broadcastAsync { BotOfflineEvent.Active(bot, cause) }
+                        } else {
+                            @OptIn(DelicateCoroutinesApi::class)
+                            GlobalScope.launch {
+                                BotOfflineEvent.Active(bot, cause).broadcast()
+                            }
+                        }
                     }
                 }
             },
@@ -177,6 +191,7 @@ internal open class QQAndroidBot constructor(
         set(
             NoticeProcessorPipeline,
             NoticeProcessorPipelineImpl.create(
+                bot,
                 MsgInfoDecoder(pipelineLogger.subLogger("MsgInfoDecoder")),
                 GroupNotificationDecoder(),
 
@@ -235,7 +250,7 @@ internal open class QQAndroidBot constructor(
             AccountSecretsManager,
             configuration.createAccountsSecretsManager(bot.logger.subLogger("AccountSecretsManager")),
         )
-        set(ImagePatcher, ImagePatcher())
+        set(ImagePatcher, ImagePatcherImpl())
     }
 
     /**

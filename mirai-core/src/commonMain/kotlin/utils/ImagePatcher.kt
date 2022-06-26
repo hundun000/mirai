@@ -10,44 +10,60 @@
 package net.mamoe.mirai.internal.utils
 
 import net.mamoe.mirai.internal.contact.GroupImpl
-import net.mamoe.mirai.internal.message.FriendImage
-import net.mamoe.mirai.internal.message.OfflineGroupImage
+import net.mamoe.mirai.internal.message.image.FriendImage
+import net.mamoe.mirai.internal.message.image.OfflineGroupImage
 import net.mamoe.mirai.internal.network.component.ComponentKey
 import net.mamoe.mirai.internal.network.protocol.packet.chat.image.ImgStore
-import net.mamoe.mirai.internal.network.protocol.packet.sendAndExpect
 import net.mamoe.mirai.utils.ResourceAccessLock
 import net.mamoe.mirai.utils.UnsafeMutableNonNullProperty
 import net.mamoe.mirai.utils.currentTimeMillis
 import net.mamoe.mirai.utils.unsafeMutableNonNullPropertyOf
 
-internal open class ImagePatcher {
-    companion object : ComponentKey<ImagePatcher> {
-        inline fun <T> ImageCache.withCache(action: (ImageCache) -> T): T {
-            return try {
-                action(this)
-            } finally {
-                this.accessLock.release()
-            }
-        }
-    }
+internal interface ImagePatcher {
+    fun findCacheByImageId(id: String): ImageCache?
 
-    data class ImageCache(
-        var updateTime: Long = 0,
-        val id: UnsafeMutableNonNullProperty<String> = unsafeMutableNonNullPropertyOf(),
-        // OGI: OfflineGroupImage
-        val cacheOGI: UnsafeMutableNonNullProperty<OfflineGroupImage> = unsafeMutableNonNullPropertyOf(),
-        val accessLock: ResourceAccessLock = ResourceAccessLock(),
+    fun putCache(image: OfflineGroupImage)
+
+    suspend fun patchOfflineGroupImage(
+        group: GroupImpl,
+        image: OfflineGroupImage,
     )
 
+    suspend fun patchFriendImageToGroupImage(
+        group: GroupImpl,
+        image: FriendImage,
+    ): OfflineGroupImage
+
+    companion object : ComponentKey<ImagePatcher>
+}
+
+internal data class ImageCache(
+    var updateTime: Long = 0,
+    val id: UnsafeMutableNonNullProperty<String> = unsafeMutableNonNullPropertyOf(),
+    // OGI: OfflineGroupImage
+    val cacheOGI: UnsafeMutableNonNullProperty<OfflineGroupImage> = unsafeMutableNonNullPropertyOf(),
+    val accessLock: ResourceAccessLock = ResourceAccessLock(),
+)
+
+internal inline fun <T> ImageCache.withCache(action: (ImageCache) -> T): T {
+    return try {
+        action(this)
+    } finally {
+        this.accessLock.release()
+    }
+}
+
+
+internal open class ImagePatcherImpl : ImagePatcher {
     val caches: Array<ImageCache> = Array(20) { ImageCache() }
 
     fun findCache(id: String): ImageCache? {
         return caches.firstOrNull { it.id.value0 == id && it.accessLock.tryUse() }
     }
 
-    fun findCacheByImageId(id: String): ImageCache? = findCache(calcInternalIdByImageId(id))
+    override fun findCacheByImageId(id: String): ImageCache? = findCache(calcInternalIdByImageId(id))
 
-    fun putCache(image: OfflineGroupImage) {
+    override fun putCache(image: OfflineGroupImage) {
         putCache(calcInternalIdByImageId(image.imageId)).cacheOGI.value0 = image
     }
 
@@ -102,7 +118,7 @@ internal open class ImagePatcher {
         return imageId.substring(1, imageId.indexOf('}'))
     }
 
-    suspend fun patchOfflineGroupImage(
+    override suspend fun patchOfflineGroupImage(
         group: GroupImpl,
         image: OfflineGroupImage,
     ) {
@@ -117,13 +133,15 @@ internal open class ImagePatcher {
 
         val bot = group.bot
 
-        val response: ImgStore.GroupPicUp.Response = ImgStore.GroupPicUp(
-            bot.client,
-            uin = bot.id,
-            groupCode = group.id,
-            md5 = image.md5,
-            size = 1,
-        ).sendAndExpect(bot)
+        val response: ImgStore.GroupPicUp.Response = bot.network.sendAndExpect(
+            ImgStore.GroupPicUp(
+                bot.client,
+                uin = bot.id,
+                groupCode = group.id,
+                md5 = image.md5,
+                size = 1,
+            )
+        )
 
         when (response) {
             is ImgStore.GroupPicUp.Response.Failed -> {
@@ -143,7 +161,7 @@ internal open class ImagePatcher {
     /**
      * Ensures server holds the cache
      */
-    suspend fun patchFriendImageToGroupImage(
+    override suspend fun patchFriendImageToGroupImage(
         group: GroupImpl,
         image: FriendImage,
     ): OfflineGroupImage {
@@ -154,13 +172,15 @@ internal open class ImagePatcher {
 
         val bot = group.bot
 
-        val response = ImgStore.GroupPicUp(
-            bot.client,
-            uin = bot.id,
-            groupCode = group.id,
-            md5 = image.md5,
-            size = image.size
-        ).sendAndExpect(bot.network)
+        val response = bot.network.sendAndExpect(
+            ImgStore.GroupPicUp(
+                bot.client,
+                uin = bot.id,
+                groupCode = group.id,
+                md5 = image.md5,
+                size = image.size
+            )
+        )
 
         return OfflineGroupImage(
             imageId = image.imageId,

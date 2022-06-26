@@ -7,9 +7,12 @@
  * https://github.com/mamoe/mirai/blob/dev/LICENSE
  */
 
+package pluginresolveselfdepoverconsoleones
+
 import io.ktor.client.*
 import io.ktor.client.engine.java.*
 import io.ktor.client.plugins.resources.*
+import net.mamoe.console.integrationtest.assertClassSame
 import net.mamoe.mirai.console.plugin.jvm.JvmPluginDescription
 import net.mamoe.mirai.console.plugin.jvm.KotlinPlugin
 import net.mamoe.mirai.utils.info
@@ -25,5 +28,7 @@ public class PluginResolveSelfDependenciesOverConsoleOnes :
                 install(Resources)
             }.toString()
         }
+        val hcC = Class.forName("io.ktor.client.HttpClient")
+        assertClassSame(hcC, jvmPluginClasspath.pluginIndependentLibrariesClassLoader.loadClass(hcC.name))
     }
 }

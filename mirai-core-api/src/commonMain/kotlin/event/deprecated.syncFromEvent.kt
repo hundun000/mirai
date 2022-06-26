@@ -1,10 +1,10 @@
 /*
- * Copyright 2019-2021 Mamoe Technologies and contributors.
+ * Copyright 2019-2022 Mamoe Technologies and contributors.
  *
- *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
  *
- *  https://github.com/mamoe/mirai/blob/master/LICENSE
+ * https://github.com/mamoe/mirai/blob/dev/LICENSE
  */
 
 @file:Suppress("unused")
@@ -33,7 +33,7 @@ import kotlin.reflect.KClass
  * @throws TimeoutCancellationException 在超时后抛出.
  * @throws Throwable 当 [mapper] 抛出任何异常时, 本函数会抛出该异常
  */
-@DeprecatedSinceMirai(warningSince = "2.10")
+@DeprecatedSinceMirai(warningSince = "2.10", errorSince = "2.12")
 @Deprecated(
     "Use GlobalEventChannel.syncFromEvent",
     ReplaceWith(
@@ -42,7 +42,7 @@ import kotlin.reflect.KClass
         "net.mamoe.mirai.event.GlobalEventChannel",
         "net.mamoe.mirai.event.syncFromEvent"
     ),
-    level = DeprecationLevel.WARNING
+    level = DeprecationLevel.ERROR
 )
 @JvmSynthetic
 public suspend inline fun <reified E : Event, R : Any> syncFromEvent(
@@ -52,6 +52,7 @@ public suspend inline fun <reified E : Event, R : Any> syncFromEvent(
 ): R {
     require(timeoutMillis == -1L || timeoutMillis > 0) { "timeoutMillis must be -1 or > 0" }
 
+    @Suppress("DEPRECATION")
     return if (timeoutMillis == -1L) {
         coroutineScope {
             GlobalEventChannel.syncFromEventImpl(E::class, this, priority) { mapper.invoke(it, it) }
@@ -78,11 +79,11 @@ public suspend inline fun <reified E : Event, R : Any> syncFromEvent(
  * @throws Throwable 当 [mapper] 抛出任何异常时, 本函数会抛出该异常
  */
 @JvmSynthetic
-@DeprecatedSinceMirai(warningSince = "2.10")
+@DeprecatedSinceMirai(warningSince = "2.10", errorSince = "2.12")
 @Deprecated(
     "Use GlobalEventChannel.syncFromEvent",
     ReplaceWith("withTimeoutOrNull(timeoutMillis) { GlobalEventChannel.syncFromEvent<E, R>(priority) { event -> with(event) { mapper(event) } }"),
-    level = DeprecationLevel.WARNING
+    level = DeprecationLevel.ERROR
 )
 public suspend inline fun <reified E : Event, R : Any> syncFromEventOrNull(
     timeoutMillis: Long,
@@ -92,6 +93,7 @@ public suspend inline fun <reified E : Event, R : Any> syncFromEventOrNull(
     require(timeoutMillis > 0) { "timeoutMillis must be > 0" }
 
     return withTimeoutOrNull(timeoutMillis) {
+        @Suppress("DEPRECATION")
         GlobalEventChannel.syncFromEventImpl(E::class, this, priority) { mapper.invoke(it, it) }
     }
 }
@@ -123,8 +125,10 @@ public suspend inline fun <reified E : Event, R : Any> syncFromEventOrNull(
         "net.mamoe.mirai.event.globalEventChannel",
         "net.mamoe.mirai.event.syncFromEvent"
     ),
+    level = DeprecationLevel.ERROR
 )
 @JvmSynthetic
+@DeprecatedSinceMirai(warningSince = "2.10", errorSince = "2.12")
 @Suppress("DeferredIsResult")
 public inline fun <reified E : Event, R : Any> CoroutineScope.asyncFromEventOrNull(
     timeoutMillis: Long,
@@ -173,8 +177,9 @@ public inline fun <reified E : Event, R : Any> CoroutineScope.asyncFromEventOrNu
         "net.mamoe.mirai.event.globalEventChannel",
         "net.mamoe.mirai.event.syncFromEvent"
     ),
+    level = DeprecationLevel.ERROR
 )
-@DeprecatedSinceMirai("2.10")
+@DeprecatedSinceMirai(warningSince = "2.10", errorSince = "2.12")
 @JvmSynthetic
 @Suppress("DeferredIsResult")
 public inline fun <reified E : Event, R : Any> CoroutineScope.asyncFromEvent(
@@ -199,7 +204,7 @@ public inline fun <reified E : Event, R : Any> CoroutineScope.asyncFromEvent(
 //////////////
 
 @Deprecated("Deprecated since its usages are deprecated")
-@DeprecatedSinceMirai("2.10")
+@DeprecatedSinceMirai(warningSince = "2.10")
 @JvmSynthetic
 @PublishedApi
 internal suspend inline fun <E : Event, R> syncFromEventImpl(

@@ -39,8 +39,11 @@ dependencies {
 
     api("com.github.jengelman.gradle.plugins:shadow:6.0.0")
     api(`jetbrains-annotations`)
-    api("com.jfrog.bintray.gradle:gradle-bintray-plugin:1.8.5")
 
+    // override vulnerable Log4J version
+    // https://blog.gradle.org/log4j-vulnerability
+    implementation(`log4j-api`)
+    implementation(`log4j-core`)
 
     testApi(kotlin("test-junit5"))
     testApi("org.junit.jupiter:junit-jupiter-api:${Versions.junit}")
@@ -116,5 +119,5 @@ tasks {
 }
 
 if (System.getenv("MIRAI_IS_SNAPSHOTS_PUBLISHING")?.toBoolean() == true) {
-    configurePublishing("mirai-console-gradle")
+    configurePublishing("mirai-console-gradle", skipPublicationSetup = true)
 }

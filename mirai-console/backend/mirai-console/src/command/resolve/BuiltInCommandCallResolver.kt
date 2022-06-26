@@ -19,7 +19,7 @@ import net.mamoe.mirai.console.extensions.CommandCallResolverProvider
 import net.mamoe.mirai.console.internal.data.classifierAsKClass
 import net.mamoe.mirai.console.util.ConsoleExperimentalApi
 import net.mamoe.mirai.console.util.safeCast
-import net.mamoe.mirai.message.data.EmptyMessageChain
+import net.mamoe.mirai.message.data.emptyMessageChain
 import net.mamoe.mirai.message.data.toMessageChain
 
 /**
@@ -52,7 +52,8 @@ public object BuiltInCommandCallResolver : CommandCallResolver {
                 callee,
                 signature.signature,
                 signature.zippedArguments.map { it.second },
-                context ?: EmptyCommandArgumentContext
+                context ?: EmptyCommandArgumentContext,
+                call.originalMessage,
             )
         )
     }
@@ -101,14 +102,24 @@ public object BuiltInCommandCallResolver : CommandCallResolver {
     ): ResolveData? {
         val signature = this
         val receiverParameter = signature.receiverParameter
-        if (receiverParameter?.type?.classifierAsKClass()?.isInstance(caller) == false) {
-            errorSink.reportUnmatched(
-                UnmatchedCommandSignature(
-                    signature,
-                    FailureReason.InapplicableReceiverArgument(receiverParameter, caller)
-                )
-            )// not compatible receiver
-            return null
+
+        if (receiverParameter != null) {
+            when (receiverParameter) {
+                is CommandReceiverParameter.Context -> {
+                    // accepts any sender
+                }
+                is CommandReceiverParameter.Sender -> {
+                    if (!receiverParameter.type.classifierAsKClass().isInstance(caller)) {
+                        errorSink.reportUnmatched(
+                            UnmatchedCommandSignature(
+                                signature,
+                                FailureReason.InapplicableReceiverArgument(receiverParameter, caller)
+                            )
+                        )// not compatible receiver
+                        return null
+                    }
+                }
+            }
         }
 
         val valueParameters = signature.valueParameters
@@ -149,7 +160,7 @@ public object BuiltInCommandCallResolver : CommandCallResolver {
                 // add default empty vararg argument
                 val remainingVararg = remainingParameters.find { it.isVararg }
                 if (remainingVararg != null) {
-                    zipped.add(remainingVararg to DefaultCommandValueArgument(EmptyMessageChain))
+                    zipped.add(remainingVararg to DefaultCommandValueArgument(emptyMessageChain()))
                     remainingParameters.remove(remainingVararg)
                 }
             }
@@ -195,7 +206,7 @@ public object BuiltInCommandCallResolver : CommandCallResolver {
             .also { list ->
 
                 val candidates = list
-                    .asSequence().filterIsInstance<ResolveData>()
+                    .asSequence()
                     .flatMap { phase ->
                         phase.argumentAcceptances.filter { it.acceptance is ArgumentAcceptance.Direct }
                             .map { phase to it }

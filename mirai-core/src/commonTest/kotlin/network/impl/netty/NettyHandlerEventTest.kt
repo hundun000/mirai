@@ -12,7 +12,6 @@ package net.mamoe.mirai.internal.network.impl.netty
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.isActive
 import net.mamoe.mirai.event.Event
-import net.mamoe.mirai.event.broadcast
 import net.mamoe.mirai.event.events.BotOfflineEvent
 import net.mamoe.mirai.event.events.BotOnlineEvent
 import net.mamoe.mirai.event.events.BotReloginEvent
@@ -121,12 +120,6 @@ internal class NettyHandlerEventTest : AbstractNettyNHTest() {
         }
     }
 
-
-    @Test
-    fun testPreconditions() = runBlockingUnit {
-        assertEventBroadcasts<Event>(1) { BotOfflineEvent.Active(bot, null).broadcast() }
-    }
-
     @Test
     fun `BotOffline from OK TO CLOSED`() = runBlockingUnit {
         bot.login()
@@ -145,6 +138,7 @@ internal class NettyHandlerEventTest : AbstractNettyNHTest() {
     fun `BotOffline from OK TO CLOSED by bot close`() = runBlockingUnit {
         bot.login()
         assertState(OK)
+        assertEquals(FirstLoginResult.PASSED, firstLoginResult)
         eventDispatcher.joinBroadcast() // `login` launches a job which broadcasts the event
         assertEventBroadcasts<Event>(1) {
             assertTrue { bot.isActive }

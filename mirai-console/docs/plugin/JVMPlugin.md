@@ -322,7 +322,7 @@ public final class JExample extends JavaPlugin {
     }
 
     @Override
-    public onEnable() {
+    public void onEnable() {
         if (getLogger().isInfoEnabled()) {
             getLogger().info("一条 INFO 级别的日志"); // 当日志被用户启用时才会执行
         }
@@ -330,43 +330,7 @@ public final class JExample extends JavaPlugin {
 }
 ```
 
-Console 的日志一共有五个级别：
-
-|  级别（由高到低）  | 用途           |  默认启用  |
-|:----------:|--------------|:------:|
-|   ERROR    | 记录影响程序运行的错误  |   是    |
-|  WARNING   | 记录不影响程序运行的警告 |   是    |
-|    INFO    | 记录一条普通信息     |   是    |
-|   DEBUG    | 记录普通调试信息     |   否    |
-|  VERBOSE   | 记录详细调试信息     |   否    |
-
-由于 DEBUG 和 VERBOSE
-默认是禁用的，插件开发者可以自由使用这两个级别的日志来辅助进行调试工作。也可以在当用户遇到问题时，让用户单独启用这些日志来获取调试信息。
-
-可以在配置 `config/Console/Logger.yml` 中进行如下操作：
-
-### 调整全局日志等级
-
-修改 `defaultPriority`，若设置为 DEBUG，则启用上表中 DEBUG 及更高级别的日志，即
-DEBUG、INFO、WARNING、ERROR。
-
-### 调整特定日志等级
-
-每个插件被分配的 MiraiLogger 的 ID (identity) 为插件描述的名称（name）。
-
-在 `loggers` 增加对名称的配置，示例（启用名为 `Chat Command` 的插件的 DEBUG 及更高级别的日志）：
-
-```yaml
-loggers:
-    "Chat Command": DEBUG
-```
-
-提示：该 ID 也可以在日志中找到。如下面的日志中，`Bot 12345678` 就是其所属 MiraiLogger 的 ID。（其前 V
-代表等级为 VERBOSE）
-
-```text
-2022-05-02 11:09:28 V/Bot 12345678: Event: BotOnlineEvent(bot=Bot(12345678))
-```
+有关日志的配置方式可以参考 [Logging](../Logging.md)
 
 ## 插件生命周期与依赖管理
 
@@ -380,7 +344,7 @@ loggers:
 - 加载：插件加载器已经识别了所有的插件并根据依赖关系确定了加载顺序。这时插件的 `onLoad()` 回调将会被调用，插件做一次性初始化工作；
 - 启用：插件加载器已经加载了所有的插件并调用它们的 `onLoad()`。这时插件的 `onEnable()`
   回调将会被调用，插件开始正常工作；
-- 禁用：当用户要求关闭某个插件，或者 Console 正在关闭时插件会被禁用，`onEnable()`
+- 禁用：当用户要求关闭某个插件，或者 Console 正在关闭时插件会被禁用，`onDisable()`
   回调将会被调用，插件停止一切在启用状态时创建的工作。
 
 每个插件一定会经历初始化和加载，但可能会经历零次到任意次启用和禁用。根据不同 Console
@@ -444,7 +408,7 @@ public final class JExample extends JavaPlugin {
     }
 
     @Override
-    public onEnable() {
+    public void onEnable() {
         getScheduler().delayed(1000L, () -> System.out.println("一秒钟过去了。"));
     }
 }
@@ -475,7 +439,7 @@ public final class JExample extends JavaPlugin {
     }
 
     @Override
-    public onEnable() {
+    public void onEnable() {
         File dataFile = resolveDataFile("myDataFile.txt");
         File configFile = resolveConfigFile("myConfigFile.txt");
     }
@@ -584,7 +548,34 @@ Central
 。  
 要了解什么情况下需要强制打包，请参阅 [插件依赖打包机制](#插件依赖打包机制)。
 
-### 发布插件到 mirai-console-loader
+## 调试
+
+[mirai-console-gradle](../../tools/gradle-plugin/README.md)
+提供了在 IDEA 等 IDE 中调试插件的功能, 运行 Gradle 任务 `runConsole` 即可启动完整的 mirai-console。
+
+> mirai-console 测试时默认在 `/debug-sandbox` 运行。
+>
+> 可在 `.gitignore` 中添加 `/debug-sandbox` 规则以避免测试环境被提交至 Git。
+
+使用 IDEA 创建的项目可在 `Run Configurations` 找到 `Run Mirai Console`。
+
+![PluginDebugRunConfiguration.png](images/PluginDebugRunConfiguration.png)
+
+可在 IDEA 右侧 `Gradle` 中找到 Gradle 任务 `runConsole`。
+
+![PluginDebugGradleTask.png](images/PluginDebugGradleTask.png)
+
+运行后即可看见如下图所示的 mirai-console:
+
+![PluginDebugWindowPreview](images/PluginDebugWindowPreview.webp)
+
+> 如需进行调试, 请使用运行 (绿色三角形) 旁边的 `Debug` 按钮.
+> 也可以在 Gradle 工具栏找到 `runConsole` 并右键选择 `Debug`。
+>
+> 如果没法输入命令, 请确认 Gradle 任务视图没有被聚焦至 `:runConsole`,
+> 必须选择整个 Gradle 任务视图才可执行命令。
+
+## 发布插件到 mirai-console-loader
 
 插件中心仍在开发中。
 

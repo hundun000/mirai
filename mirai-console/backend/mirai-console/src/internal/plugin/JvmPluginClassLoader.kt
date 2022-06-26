@@ -12,6 +12,7 @@ package net.mamoe.mirai.console.internal.plugin
 
 import net.mamoe.mirai.console.MiraiConsole
 import net.mamoe.mirai.console.plugin.jvm.ExportManager
+import net.mamoe.mirai.console.plugin.jvm.JvmPluginClasspath
 import net.mamoe.mirai.utils.*
 import org.eclipse.aether.artifact.Artifact
 import org.eclipse.aether.graph.DependencyFilter
@@ -51,13 +52,49 @@ internal class JvmPluginsLoadingCtx(
     }
 }
 
-internal class DynLibClassLoader(
-    parent: ClassLoader?,
-    private val clName: String? = null,
-) : URLClassLoader(arrayOf(), parent) {
+internal class DynLibClassLoader : URLClassLoader {
+    private val clName: String?
+    internal var dependencies: List<DynLibClassLoader> = emptyList()
+
+    private constructor(parent: ClassLoader?, clName: String?) : super(arrayOf(), parent) {
+        this.clName = clName
+    }
+
+    @Suppress("Since15")
+    private constructor(parent: ClassLoader?, clName: String?, vmName: String?) : super(vmName, arrayOf(), parent) {
+        this.clName = clName
+    }
+
+
     companion object {
+        internal val java9: Boolean
+
         init {
             ClassLoader.registerAsParallelCapable()
+            java9 = kotlin.runCatching { Class.forName("java.lang.Module") }.isSuccess
+        }
+
+        fun newInstance(parent: ClassLoader?, clName: String?, vmName: String?): DynLibClassLoader {
+            return when {
+                java9 -> DynLibClassLoader(parent, clName, vmName)
+                else -> DynLibClassLoader(parent, clName)
+            }
+        }
+
+        fun tryFastOrStrictResolve(name: String): Class<*>? {
+            if (name.startsWith("java.")) return Class.forName(name, false, JavaSystemPlatformClassLoader)
+
+            // All mirai-core hard-linked should use same version to avoid errors (ClassCastException).
+            if (name.startsWith("io.netty") || name in AllDependenciesClassesHolder.allclasses) {
+                return AllDependenciesClassesHolder.appClassLoader.loadClass(name)
+            }
+            if (name.startsWith("net.mamoe.mirai.")) { // Avoid plugin classing cheating
+                try {
+                    return AllDependenciesClassesHolder.appClassLoader.loadClass(name)
+                } catch (ignored: ClassNotFoundException) {
+                }
+            }
+            return null
         }
     }
 
@@ -104,11 +141,22 @@ internal class DynLibClassLoader(
         }
     }
 
-    internal fun findButNoSystem(name: String): Class<*>? {
+    internal fun findButNoSystem(name: String): Class<*>? = findButNoSystem(name, mutableListOf())
+    private fun findButNoSystem(name: String, track: MutableList<DynLibClassLoader>): Class<*>? {
+        if (name.startsWith("java.")) return null
+
+        // Skip duplicated searching, for faster speed.
+        if (this in track) return null
+        track.add(this)
+
         val pt = this.parent
         if (pt is DynLibClassLoader) {
-            pt.findButNoSystem(name)?.let { return it }
+            pt.findButNoSystem(name, track)?.let { return it }
         }
+        dependencies.forEach { dep ->
+            dep.findButNoSystem(name, track)?.let { return it }
+        }
+
         synchronized(getClassLoadingLock(name)) {
             findLoadedClass(name)?.let { return it }
             try {
@@ -120,28 +168,18 @@ internal class DynLibClassLoader(
     }
 
     override fun loadClass(name: String, resolve: Boolean): Class<*> {
-        if (name.startsWith("java.")) return Class.forName(name, false, JavaSystemPlatformClassLoader)
-        val pt = this.parent
-        val topPt: ClassLoader? = if (pt is DynLibClassLoader) {
-            pt.findButNoSystem(name)?.let { return it }
+        tryFastOrStrictResolve(name)?.let { return it }
 
-            generateSequence<ClassLoader>(pt) { it.parent }.firstOrNull { it !is DynLibClassLoader }
-        } else pt
+        findButNoSystem(name)?.let { return it }
 
-
-        synchronized(getClassLoadingLock(name)) {
-            findLoadedClass(name)?.let { return it }
-            try {
-                return findClass(name)
-            } catch (ignored: ClassNotFoundException) {
-            }
-            return Class.forName(name, false, topPt)
-        }
+        val topParent = generateSequence<ClassLoader>(this) { it.parent }.firstOrNull { it !is DynLibClassLoader }
+        return Class.forName(name, false, topParent)
     }
 }
 
 @Suppress("JoinDeclarationAndAssignment")
 internal class JvmPluginClassLoaderN : URLClassLoader {
+    val openaccess: JvmPluginClasspath = OpenAccess()
     val file: File
     val ctx: JvmPluginsLoadingCtx
     val sharedLibrariesLogger: DynLibClassLoader
@@ -190,8 +228,13 @@ internal class JvmPluginClassLoaderN : URLClassLoader {
                     pluginMainPackages.add(pkg)
                 }
         }
-        pluginSharedCL = DynLibClassLoader(ctx.sharedLibrariesLoader, "SharedCL{${file.name}}")
-        pluginIndependentCL = DynLibClassLoader(pluginSharedCL, "IndependentCL{${file.name}}")
+        pluginSharedCL = DynLibClassLoader.newInstance(
+            ctx.sharedLibrariesLoader, "SharedCL{${file.name}}", "${file.name}[shared]"
+        )
+        pluginIndependentCL = DynLibClassLoader.newInstance(
+            pluginSharedCL, "IndependentCL{${file.name}}", "${file.name}[private]"
+        )
+        pluginSharedCL.dependencies = mutableListOf()
         addURL(file.toURI().toURL())
     }
 
@@ -199,6 +242,7 @@ internal class JvmPluginClassLoaderN : URLClassLoader {
     internal var declaredFilter: ExportManager? = null
 
     val sharedClLoadedDependencies = mutableSetOf<String>()
+    val privateClLoadedDependencies = mutableSetOf<String>()
     internal fun containsSharedDependency(
         dependency: String
     ): Boolean {
@@ -243,8 +287,11 @@ internal class JvmPluginClassLoaderN : URLClassLoader {
         if (dependencies.isEmpty()) return
         val results = ctx.downloader.resolveDependencies(
             dependencies, ctx.sharedLibrariesFilter,
-            DependencyFilter { node, _ ->
-                return@DependencyFilter !containsSharedDependency(node.artifact.depId())
+            DependencyFilter filter@{ node, _ ->
+                val depid = node.artifact.depId()
+                if (containsSharedDependency(depid)) return@filter false
+                if (depid in privateClLoadedDependencies) return@filter false
+                return@filter true
             })
         val files = results.artifactResults.mapNotNull { result ->
             result.artifact?.let { it to it.file }
@@ -257,22 +304,21 @@ internal class JvmPluginClassLoaderN : URLClassLoader {
                 sharedClLoadedDependencies.add(artifact.depId())
             } else {
                 pluginIndependentCL.addLib(lib)
+                privateClLoadedDependencies.add(artifact.depId())
             }
             logger.debug { "Linked $artifact $linkType <${if (shared) pluginSharedCL else pluginIndependentCL}>" }
         }
     }
 
     companion object {
-        private val java9: Boolean
 
         init {
             ClassLoader.registerAsParallelCapable()
-            java9 = kotlin.runCatching { Class.forName("java.lang.Module") }.isSuccess
         }
 
         fun newLoader(file: File, ctx: JvmPluginsLoadingCtx): JvmPluginClassLoaderN {
             return when {
-                java9 -> JvmPluginClassLoaderN(file, ctx)
+                DynLibClassLoader.java9 -> JvmPluginClassLoaderN(file, ctx)
                 else -> JvmPluginClassLoaderN(file, ctx, Unit)
             }
         }
@@ -280,10 +326,10 @@ internal class JvmPluginClassLoaderN : URLClassLoader {
 
     internal fun resolvePluginSharedLibAndPluginClass(name: String): Class<*>? {
         return try {
-            pluginSharedCL.loadClass(name)
+            pluginSharedCL.findButNoSystem(name)
         } catch (e: ClassNotFoundException) {
-            resolvePluginPublicClass(name)
-        }
+            null
+        } ?: resolvePluginPublicClass(name)
     }
 
     internal fun resolvePluginPublicClass(name: String): Class<*>? {
@@ -303,16 +349,8 @@ internal class JvmPluginClassLoaderN : URLClassLoader {
     override fun loadClass(name: String, resolve: Boolean): Class<*> = loadClass(name)
 
     override fun loadClass(name: String): Class<*> {
-        if (name.startsWith("java.")) return Class.forName(name, false, JavaSystemPlatformClassLoader)
-        if (name.startsWith("io.netty") || name in AllDependenciesClassesHolder.allclasses) {
-            return AllDependenciesClassesHolder.appClassLoader.loadClass(name)
-        }
-        if (name.startsWith("net.mamoe.mirai.")) { // Avoid plugin classing cheating
-            try {
-                return AllDependenciesClassesHolder.appClassLoader.loadClass(name)
-            } catch (ignored: ClassNotFoundException) {
-            }
-        }
+        DynLibClassLoader.tryFastOrStrictResolve(name)?.let { return it }
+
         sharedLibrariesLogger.loadClassInThisClassLoader(name)?.let { return it }
 
         // Search dependencies first
@@ -322,7 +360,7 @@ internal class JvmPluginClassLoaderN : URLClassLoader {
         // Search in independent class loader
         // @context: pluginIndependentCL.parent = pluinSharedCL
         try {
-            return pluginIndependentCL.loadClass(name)
+            pluginIndependentCL.findButNoSystem(name)?.let { return it }
         } catch (ignored: ClassNotFoundException) {
         }
 
@@ -409,6 +447,50 @@ internal class JvmPluginClassLoaderN : URLClassLoader {
         return "JvmPluginClassLoader{${file.name}}"
     }
 
+    inner class OpenAccess : JvmPluginClasspath {
+        override val pluginFile: File
+            get() = this@JvmPluginClassLoaderN.file
+
+        override val pluginClassLoader: ClassLoader
+            get() = this@JvmPluginClassLoaderN
+
+        override val pluginSharedLibrariesClassLoader: ClassLoader
+            get() = pluginSharedCL
+        override val pluginIndependentLibrariesClassLoader: ClassLoader
+            get() = pluginIndependentCL
+
+        private val permitted by lazy {
+            arrayOf(
+                this@JvmPluginClassLoaderN,
+                pluginSharedCL,
+                pluginIndependentCL,
+            )
+        }
+
+        override fun addToPath(classLoader: ClassLoader, file: File) {
+            if (classLoader !in permitted) {
+                throw IllegalArgumentException("Unsupported classloader or cross plugin accessing: $classLoader")
+            }
+            if (classLoader == this@JvmPluginClassLoaderN) {
+                this@JvmPluginClassLoaderN.addURL(file.toURI().toURL())
+                return
+            }
+            classLoader as DynLibClassLoader
+            classLoader.addLib(file)
+        }
+
+        override fun downloadAndAddToPath(classLoader: ClassLoader, dependencies: Collection<String>) {
+            if (classLoader !in permitted) {
+                throw IllegalArgumentException("Unsupported classloader or cross plugin accessing: $classLoader")
+            }
+            if (classLoader === this@JvmPluginClassLoaderN) {
+                throw IllegalArgumentException("Only support download dependencies to `plugin[Shared/Independent]LibrariesClassLoader`")
+            }
+            this@JvmPluginClassLoaderN.linkLibraries(
+                linkedLogger, dependencies, classLoader === pluginSharedCL
+            )
+        }
+    }
 }
 
 private val JavaSystemPlatformClassLoader: ClassLoader by lazy {

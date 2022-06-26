@@ -39,7 +39,7 @@ jobs:
 
       - name: Check
         run: >
-          ./gradlew check --scan
+          ./gradlew check --scan --no-parallel
           -Dmirai.network.show.all.components=true
           -Dkotlinx.coroutines.debug=on
           -Dmirai.network.show.packet.details=true
@@ -54,7 +54,11 @@ jobs:
           SNAPSHOTS_PUBLISHING_URL: ${{ secrets.SNAPSHOTS_PUBLISHING_URL }}
           CURRENT_BRANCH_NAME: dev
 
+      - name: Release CI RAM
+        run: pkill java
+        continue-on-error: true
       - run: >
           ./gradlew publishSnapshotPage --info
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true

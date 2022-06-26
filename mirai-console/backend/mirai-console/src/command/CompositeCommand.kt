@@ -1,10 +1,10 @@
 /*
- * Copyright 2019-2021 Mamoe Technologies and contributors.
+ * Copyright 2019-2022 Mamoe Technologies and contributors.
  *
- *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
  *
- *  https://github.com/mamoe/mirai/blob/master/LICENSE
+ * https://github.com/mamoe/mirai/blob/dev/LICENSE
  */
 
 package net.mamoe.mirai.console.command
@@ -21,6 +21,7 @@ import net.mamoe.mirai.console.util.ConsoleExperimentalApi
 import kotlin.annotation.AnnotationRetention.RUNTIME
 import kotlin.annotation.AnnotationTarget.FUNCTION
 import kotlin.annotation.AnnotationTarget.PROPERTY
+
 
 /**
  * 复合指令. 指令注册时候会通过反射构造指令解析器.
@@ -57,14 +58,20 @@ import kotlin.annotation.AnnotationTarget.PROPERTY
  *     }
  *
  *     @SubCommand
- *     suspend fun ConsoleCommandSender.foo() {
- *         // 使用 ConsoleCommandSender 作为接收者，表示指令只能由控制台执行。
+ *     suspend fun SystemCommandSender.foo() {
+ *         // 使用 SystemCommandSender 作为接收者，表示指令只能由系统(控制台或其他插件)执行。
  *         // 当用户尝试在聊天环境执行时将会收到错误提示。
  *     }
  *
  *     @SubCommand("list", "查看列表") // 可以设置多个子指令名。此时函数名会被忽略。
  *     suspend fun CommandSender.list() { // 执行 "/manage list" 时调用这个函数
  *         sendMessage("/manage list 被调用了")
+ *     }
+ *
+ *     @SubCommand
+ *     suspend fun CommandContext.repeat() {
+ *         // 使用 CommandContext 作为参数，可以获得触发指令的原消息链 originalMessage，其中包含 MessageMetadata。
+ *         sender.sendMessage(originalMessage)
  *     }
  *
  *     // 支持 Image 类型, 需在聊天中执行此指令.
@@ -113,9 +120,9 @@ public abstract class CompositeCommand(
     }
 
     /**
-     * [CommandValueArgumentParser] 的环境
-     */
-    public final override val context: CommandArgumentContext = CommandArgumentContext.Builtins + overrideContext
+     * 智能参数解析环境
+     */ // open since 2.12
+    public override val context: CommandArgumentContext = CommandArgumentContext.Builtins + overrideContext
 
     /**
      * 标记一个函数为子指令, 当 [value] 为空时使用函数名.

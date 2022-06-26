@@ -19,11 +19,7 @@ import net.mamoe.mirai.message.data.PlainText
 import net.mamoe.mirai.message.data.SingleMessage
 import net.mamoe.mirai.message.data.buildMessageChain
 import net.mamoe.mirai.utils.runBIO
-import kotlin.reflect.KFunction
-import kotlin.reflect.KParameter
-import kotlin.reflect.KType
-import kotlin.reflect.KVisibility
-import kotlin.reflect.KProperty
+import kotlin.reflect.*
 import kotlin.reflect.full.*
 
 
@@ -83,10 +79,6 @@ internal object CompositeCommandSubCommandAnnotationResolver :
 
     override fun getDescription(ownerCommand: Command, function: KFunction<*>): String? =
         function.findAnnotation<CompositeCommand.Description>()?.value
-
-    override fun hasPropertyAnnotation(command: Command, property: KProperty<*>): Boolean =
-        property.hasAnnotation<CompositeCommand.ChildCommand>()
-
 }
 
 @Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
@@ -103,8 +95,6 @@ internal object SimpleCommandSubCommandAnnotationResolver :
 
     override fun getDescription(ownerCommand: Command, function: KFunction<*>): String =
         ownerCommand.description
-
-    override fun hasPropertyAnnotation(command: Command, kProperty: KProperty<*>): Boolean = false
 }
 
 internal interface SubCommandAnnotationResolver {
@@ -112,7 +102,6 @@ internal interface SubCommandAnnotationResolver {
     fun getSubCommandNames(ownerCommand: Command, function: KFunction<*>): Array<out String>
     fun getAnnotatedName(ownerCommand: Command, parameter: KParameter): String?
     fun getDescription(ownerCommand: Command, function: KFunction<*>): String?
-    fun hasPropertyAnnotation(command: Command, kProperty: KProperty<*>): Boolean
 }
 
 @ConsoleExperimentalApi
@@ -148,7 +137,6 @@ internal class CommandReflector(
         throw IllegalCommandDeclarationException(command, this, message)
     }
 
-    private fun KProperty<*>.isSubCommandProperty(): Boolean = annotationResolver.hasPropertyAnnotation(command, this)
     private fun KFunction<*>.isSubCommandFunction(): Boolean = annotationResolver.hasAnnotation(command, this)
     private fun KFunction<*>.checkExtensionReceiver() {
         this.extensionReceiverParameter?.let { receiver ->
@@ -267,7 +255,7 @@ internal class CommandReflector(
 
     @Throws(IllegalCommandDeclarationException::class)
     fun findSubCommands(): List<CommandSignatureFromKFunctionImpl> {
-        val fromMemberFunctions = command::class.functions // exclude static later
+        return command::class.functions // exclude static later
             .asSequence()
             .filter { it.isSubCommandFunction() }
             .onEach { it.checkExtensionReceiver() }
@@ -341,19 +329,6 @@ internal class CommandReflector(
                     }
                 }
             }.toList()
-
-        val fromMemberProperties = command::class.declaredMemberProperties
-            .asSequence()
-            .filter { it.isSubCommandProperty() }
-            .filterIsInstance(CompositeCommand::class.java)
-            .flatMap { property ->
-                property.overloadImpls
-            }.toList()
-
-        val list: MutableList<CommandSignatureFromKFunctionImpl> = ArrayList()
-        list.addAll(fromMemberFunctions)
-        list.addAll(fromMemberProperties)
-        return list
     }
 
     private fun <K, V> createMapEntry(key: K, value: V) = object : Map.Entry<K, V> {

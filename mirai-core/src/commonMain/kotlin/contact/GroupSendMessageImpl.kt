@@ -44,6 +44,35 @@ internal suspend fun <C : Contact> C.broadcastMessagePreSendEvent(
 }
 
 
-internal enum class SendMessageStep {
-    FIRST, LONG_MESSAGE, FRAGMENTED
+internal enum class SendMessageStep(
+    val allowMultiplePackets: Boolean
+) {
+    /**
+     * 尝试单包直接发送全部消息
+     */
+    FIRST(false) {
+        override fun nextStepOrNull(): SendMessageStep {
+            return LONG_MESSAGE
+        }
+    },
+
+    /**
+     * 尝试通过长消息通道上传长消息取得 resId 后再通过普通消息通道发送长消息标识
+     */
+    LONG_MESSAGE(false) {
+        override fun nextStepOrNull(): SendMessageStep {
+            return FRAGMENTED
+        }
+    },
+
+    /**
+     * 发送分片多包发送
+     */
+    FRAGMENTED(true) {
+        override fun nextStepOrNull(): SendMessageStep? {
+            return null
+        }
+    };
+
+    abstract fun nextStepOrNull(): SendMessageStep?
 }
