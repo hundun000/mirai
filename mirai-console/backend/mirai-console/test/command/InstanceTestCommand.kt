@@ -36,30 +36,35 @@ import java.time.temporal.TemporalAccessor
 import kotlin.reflect.KClass
 import kotlin.test.*
 
+
+
+val compositeCommandAsProvider = object : CompositeCommand(owner, "useless") {
+    @CompositeCommand.SubCommand
+    fun foo(seconds: Int) {
+        Testing.ok(seconds)
+    }
+}
+
+val groupedCommandAsProvider = object : GroupedCommand(owner, "useless") {
+    @AsSubCommandProvider
+    val child1: SubCommandProvider = object : CompositeCommand(owner, "useless") {
+        @CompositeCommand.SubCommand
+        fun bar(seconds: Int) {
+            Testing.ok(seconds)
+        }
+    }
+}
+
 class TestContainerCompositeCommand : CompositeCommand(
     owner,
     "testContainerComposite", "tsPC"
 ) {
 
-    class ChildCompositeCommand1 : CompositeCommand(owner, "useless") {
-        @SubCommand
-        fun foo(seconds: Int) {
-            Testing.ok(seconds)
-        }
-    }
+    @AsSubCommandProvider
+    val child1: SubCommandProvider = compositeCommandAsProvider
 
-    class ChildCompositeCommand2 : CompositeCommand(owner, "useless") {
-        @SubCommand
-        fun bar(seconds: Int) {
-            Testing.ok(seconds)
-        }
-    }
-
-    @ChildCommand
-    val child1: ChildCompositeCommand1  = ChildCompositeCommand1()
-
-    @ChildCommand
-    val child2: ChildCompositeCommand2 = ChildCompositeCommand2()
+    @AsSubCommandProvider
+    val child2: SubCommandProvider = groupedCommandAsProvider
 
     @SubCommand
     fun containerFoo(seconds: Int) {

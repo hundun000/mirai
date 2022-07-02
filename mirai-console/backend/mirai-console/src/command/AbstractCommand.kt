@@ -40,6 +40,14 @@ public abstract class AbstractCommand
         secondaryNames.forEach(Command.Companion::checkCommandName)
     }
 
+    /**
+     * 标记一个属性为子指令集合
+     */
+    @Retention(AnnotationRetention.RUNTIME)
+    @Target(AnnotationTarget.PROPERTY)
+    protected annotation class AsSubCommandProvider(
+    )
+
     public override val usage: String get() = description
     public override val permission: Permission by lazy { findOrCreateCommandPermission(parentPermission) }
 }

@@ -81,7 +81,35 @@ internal object CompositeCommandSubCommandAnnotationResolver :
         function.findAnnotation<CompositeCommand.Description>()?.value
 
     override fun hasPropertyAnnotation(command: Command, property: KProperty<*>): Boolean =
-        property.hasAnnotation<CompositeCommand.ChildCommand>()
+        property.hasAnnotation<AbstractCommand.AsSubCommandProvider>()
+
+}
+
+/*
+ * - 不看Function上的Annotation
+ * - 不从Function获取SubCommandNames
+ * - 看Property上的Annotation
+ */
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+internal object GroupedCommandSubCommandAnnotationResolver :
+    SubCommandAnnotationResolver {
+    override fun hasAnnotation(ownerCommand: Command, function: KFunction<*>) =
+        function.hasAnnotation<CompositeCommand.SubCommand>()
+
+    override fun getSubCommandNames(ownerCommand: Command, function: KFunction<*>): Array<out String> {
+        val annotated = function.findAnnotation<CompositeCommand.SubCommand>()!!.value
+        return if (annotated.isEmpty()) arrayOf(function.name)
+        else annotated
+    }
+
+    override fun getAnnotatedName(ownerCommand: Command, parameter: KParameter): String? =
+        parameter.findAnnotation<CompositeCommand.Name>()?.value
+
+    override fun getDescription(ownerCommand: Command, function: KFunction<*>): String? =
+        function.findAnnotation<CompositeCommand.Description>()?.value
+
+    override fun hasPropertyAnnotation(command: Command, property: KProperty<*>): Boolean =
+        property.hasAnnotation<AbstractCommand.AsSubCommandProvider>()
 
 }
 
@@ -144,7 +172,7 @@ internal class CommandReflector(
         throw IllegalCommandDeclarationException(command, this, message)
     }
 
-    private fun KProperty<*>.isSubCommandProperty(): Boolean = annotationResolver.hasPropertyAnnotation(command, this)
+    private fun KProperty<*>.isSubCommandProviderProperty(): Boolean = annotationResolver.hasPropertyAnnotation(command, this)
     private fun KFunction<*>.isSubCommandFunction(): Boolean = annotationResolver.hasAnnotation(command, this)
     private fun KFunction<*>.checkExtensionReceiver() {
         this.extensionReceiverParameter?.let { receiver ->
@@ -351,12 +379,12 @@ internal class CommandReflector(
 
         val fromMemberProperties = command::class.declaredMemberProperties
             .asSequence()
-            .filter { it.isSubCommandProperty() }
+            .filter { it.isSubCommandProviderProperty() }
             .map { it.getter.call(command) }
-            .filter { it is CompositeCommand }
+            .filter { it is SubCommandProvider }
             .flatMap { property ->
-                property as CompositeCommand
-                property.overloads
+                property as SubCommandProvider
+                property.provideOverloads
             }.toList()
 
         val list: MutableList<CommandSignatureFromKFunction> = ArrayList()

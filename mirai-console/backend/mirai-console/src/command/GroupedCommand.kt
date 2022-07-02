@@ -16,6 +16,7 @@ import net.mamoe.mirai.console.compiler.common.ResolveContext.Kind.COMMAND_NAME
 import net.mamoe.mirai.console.compiler.common.ResolveContext.Kind.RESTRICTED_CONSOLE_COMMAND_OWNER
 import net.mamoe.mirai.console.internal.command.CommandReflector
 import net.mamoe.mirai.console.internal.command.CompositeCommandSubCommandAnnotationResolver
+import net.mamoe.mirai.console.internal.command.GroupedCommandSubCommandAnnotationResolver
 import net.mamoe.mirai.console.permission.Permission
 import net.mamoe.mirai.console.util.ConsoleExperimentalApi
 import kotlin.annotation.AnnotationRetention.RUNTIME
@@ -85,7 +86,7 @@ import kotlin.annotation.AnnotationTarget.PROPERTY
  *
  * @see buildCommandArgumentContext
  */
-public abstract class CompositeCommand(
+public abstract class GroupedCommand(
     @ResolveContext(RESTRICTED_CONSOLE_COMMAND_OWNER) owner: CommandOwner,
     @ResolveContext(COMMAND_NAME) primaryName: String,
     @ResolveContext(COMMAND_NAME) vararg secondaryNames: String,
@@ -95,7 +96,7 @@ public abstract class CompositeCommand(
 ) : Command, AbstractCommand(owner, primaryName, secondaryNames = secondaryNames, description, parentPermission),
     CommandArgumentContextAware, SubCommandProvider {
 
-    private val reflector by lazy { CommandReflector(this, CompositeCommandSubCommandAnnotationResolver) }
+    private val reflector by lazy { CommandReflector(this, GroupedCommandSubCommandAnnotationResolver) }
 
     @ExperimentalCommandDescriptors
     public final override val overloads: List<@JvmWildcard CommandSignatureFromKFunction> by lazy {
@@ -123,26 +124,6 @@ public abstract class CompositeCommand(
      */ // open since 2.12
     public override val context: CommandArgumentContext = CommandArgumentContext.Builtins + overrideContext
 
-    /**
-     * 标记一个函数为子指令, 当 [value] 为空时使用函数名.
-     * @param value 子指令名
-     */
-    @Retention(RUNTIME)
-    @Target(FUNCTION)
-    protected annotation class SubCommand(
-        @ResolveContext(COMMAND_NAME) vararg val value: String = [],
-    )
-
-    /** 指令描述 */
-    @Retention(RUNTIME)
-    @Target(FUNCTION)
-    protected annotation class Description(val value: String)
-
-    /** 参数名, 将参与构成 [usage] */
-    @ConsoleExperimentalApi("Classname might change")
-    @Retention(RUNTIME)
-    @Target(AnnotationTarget.VALUE_PARAMETER)
-    protected annotation class Name(val value: String)
 }
 
 

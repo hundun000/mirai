@@ -56,7 +56,7 @@ public abstract class SimpleCommand(
     parentPermission: Permission = owner.parentPermission,
     overrideContext: CommandArgumentContext = EmptyCommandArgumentContext,
 ) : Command, AbstractCommand(owner, primaryName, secondaryNames = secondaryNames, description, parentPermission),
-    CommandArgumentContextAware {
+    CommandArgumentContextAware, SubCommandProvider {
 
     private val reflector by lazy { CommandReflector(this, SimpleCommandSubCommandAnnotationResolver) }
 
@@ -70,6 +70,12 @@ public abstract class SimpleCommand(
                     "SimpleCommand must have at least one subcommand, whereas zero present."
                 )
         }
+    }
+
+    @ExperimentalCommandDescriptors
+    public final override val provideOverloads: List<CommandSignatureFromKFunction> by lazy {
+        // TODO 再加上额外的filter/validate?
+        overloads
     }
 
     /**
