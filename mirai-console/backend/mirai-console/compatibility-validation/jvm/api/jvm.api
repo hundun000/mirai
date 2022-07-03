@@ -59,9 +59,6 @@ public abstract class net/mamoe/mirai/console/command/AbstractCommand : net/mamo
 	public fun getUsage ()Ljava/lang/String;
 }
 
-protected abstract interface annotation class net/mamoe/mirai/console/command/AbstractCommand$AsSubCommandProvider : java/lang/annotation/Annotation {
-}
-
 public abstract class net/mamoe/mirai/console/command/AbstractCommandSender : kotlinx/coroutines/CoroutineScope, net/mamoe/mirai/console/command/CommandSender {
 	public abstract fun getBot ()Lnet/mamoe/mirai/Bot;
 	public abstract fun getSubject ()Lnet/mamoe/mirai/contact/Contact;
@@ -89,6 +86,24 @@ public abstract class net/mamoe/mirai/console/command/AbstractPluginCustomComman
 	public final fun sendMessage (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	protected final fun sendMessage0 (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	protected abstract fun sendMessageImpl (Ljava/lang/String;)V
+}
+
+public abstract class net/mamoe/mirai/console/command/AbstractSubCommandProvider : net/mamoe/mirai/console/command/SubCommandProvider, net/mamoe/mirai/console/command/descriptor/CommandArgumentContextAware {
+	public fun <init> (Lnet/mamoe/mirai/console/command/CommandOwner;Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;)V
+	public synthetic fun <init> (Lnet/mamoe/mirai/console/command/CommandOwner;Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getContext ()Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;
+	public final fun getProvideOverloads ()Ljava/util/List;
+}
+
+protected abstract interface annotation class net/mamoe/mirai/console/command/AbstractSubCommandProvider$AnotherCombinedCommand : java/lang/annotation/Annotation {
+}
+
+protected abstract interface annotation class net/mamoe/mirai/console/command/AbstractSubCommandProvider$AnotherDescription : java/lang/annotation/Annotation {
+	public abstract fun value ()Ljava/lang/String;
+}
+
+protected abstract interface annotation class net/mamoe/mirai/console/command/AbstractSubCommandProvider$AnotherSubCommand : java/lang/annotation/Annotation {
+	public abstract fun value ()[Ljava/lang/String;
 }
 
 public abstract class net/mamoe/mirai/console/command/AbstractUserCommandSender : net/mamoe/mirai/console/command/AbstractCommandSender, net/mamoe/mirai/console/command/UserCommandSender {
@@ -384,13 +399,15 @@ public abstract interface class net/mamoe/mirai/console/command/CommandSenderOnM
 	public abstract fun getFromEvent ()Lnet/mamoe/mirai/event/events/MessageEvent;
 }
 
-public abstract class net/mamoe/mirai/console/command/CompositeCommand : net/mamoe/mirai/console/command/AbstractCommand, net/mamoe/mirai/console/command/Command, net/mamoe/mirai/console/command/SubCommandProvider, net/mamoe/mirai/console/command/descriptor/CommandArgumentContextAware {
+public abstract class net/mamoe/mirai/console/command/CompositeCommand : net/mamoe/mirai/console/command/AbstractCommand, net/mamoe/mirai/console/command/Command, net/mamoe/mirai/console/command/descriptor/CommandArgumentContextAware {
 	public fun <init> (Lnet/mamoe/mirai/console/command/CommandOwner;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Lnet/mamoe/mirai/console/permission/Permission;Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;)V
 	public synthetic fun <init> (Lnet/mamoe/mirai/console/command/CommandOwner;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Lnet/mamoe/mirai/console/permission/Permission;Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun getContext ()Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;
 	public final fun getOverloads ()Ljava/util/List;
-	public final fun getProvideOverloads ()Ljava/util/List;
 	public fun getUsage ()Ljava/lang/String;
+}
+
+protected abstract interface annotation class net/mamoe/mirai/console/command/CompositeCommand$CombinedCommand : java/lang/annotation/Annotation {
 }
 
 protected abstract interface annotation class net/mamoe/mirai/console/command/CompositeCommand$Description : java/lang/annotation/Annotation {
@@ -510,15 +527,6 @@ public class net/mamoe/mirai/console/command/GroupTempCommandSender : net/mamoe/
 public final class net/mamoe/mirai/console/command/GroupTempCommandSenderOnMessage : net/mamoe/mirai/console/command/TempCommandSenderOnMessage, net/mamoe/mirai/console/command/CommandSenderOnMessage {
 	public fun getFromEvent ()Lnet/mamoe/mirai/event/events/GroupTempMessageEvent;
 	public synthetic fun getFromEvent ()Lnet/mamoe/mirai/event/events/MessageEvent;
-}
-
-public abstract class net/mamoe/mirai/console/command/GroupedCommand : net/mamoe/mirai/console/command/AbstractCommand, net/mamoe/mirai/console/command/Command, net/mamoe/mirai/console/command/SubCommandProvider, net/mamoe/mirai/console/command/descriptor/CommandArgumentContextAware {
-	public fun <init> (Lnet/mamoe/mirai/console/command/CommandOwner;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Lnet/mamoe/mirai/console/permission/Permission;Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;)V
-	public synthetic fun <init> (Lnet/mamoe/mirai/console/command/CommandOwner;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Lnet/mamoe/mirai/console/permission/Permission;Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public fun getContext ()Lnet/mamoe/mirai/console/command/descriptor/CommandArgumentContext;
-	public final fun getOverloads ()Ljava/util/List;
-	public final fun getProvideOverloads ()Ljava/util/List;
-	public fun getUsage ()Ljava/lang/String;
 }
 
 public class net/mamoe/mirai/console/command/IllegalCommandArgumentException : java/lang/IllegalArgumentException {
@@ -1110,6 +1118,12 @@ public final class net/mamoe/mirai/console/command/descriptor/StringValueArgumen
 	public static final field INSTANCE Lnet/mamoe/mirai/console/command/descriptor/StringValueArgumentParser;
 	public synthetic fun parse (Ljava/lang/String;Lnet/mamoe/mirai/console/command/CommandSender;)Ljava/lang/Object;
 	public fun parse (Ljava/lang/String;Lnet/mamoe/mirai/console/command/CommandSender;)Ljava/lang/String;
+}
+
+public class net/mamoe/mirai/console/command/descriptor/SubcommandDeclarationClashException : net/mamoe/mirai/console/command/descriptor/CommandDeclarationException {
+	public fun <init> (Ljava/lang/Object;Ljava/util/List;)V
+	public final fun getOwner ()Ljava/lang/Object;
+	public final fun getSignatures ()Ljava/util/List;
 }
 
 public abstract interface class net/mamoe/mirai/console/command/descriptor/TypeVariant {

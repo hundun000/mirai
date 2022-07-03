@@ -12,17 +12,17 @@ package net.mamoe.mirai.console.command
 import net.mamoe.mirai.console.command.descriptor.*
 import net.mamoe.mirai.console.command.java.JCompositeCommand
 import net.mamoe.mirai.console.compiler.common.ResolveContext
-import net.mamoe.mirai.console.compiler.common.ResolveContext.Kind.COMMAND_NAME
 import net.mamoe.mirai.console.compiler.common.ResolveContext.Kind.RESTRICTED_CONSOLE_COMMAND_OWNER
+import net.mamoe.mirai.console.internal.command.GroupedCommandSubCommandAnnotationResolver
+import net.mamoe.mirai.console.internal.command.SubCommandReflector
+import net.mamoe.mirai.console.compiler.common.ResolveContext.Kind.COMMAND_NAME
 import net.mamoe.mirai.console.internal.command.CommandReflector
 import net.mamoe.mirai.console.internal.command.CompositeCommandSubCommandAnnotationResolver
-import net.mamoe.mirai.console.internal.command.GroupedCommandSubCommandAnnotationResolver
 import net.mamoe.mirai.console.permission.Permission
 import net.mamoe.mirai.console.util.ConsoleExperimentalApi
 import kotlin.annotation.AnnotationRetention.RUNTIME
 import kotlin.annotation.AnnotationTarget.FUNCTION
 import kotlin.annotation.AnnotationTarget.PROPERTY
-
 
 /**
  * 复合指令. 指令注册时候会通过反射构造指令解析器.
@@ -86,38 +86,48 @@ import kotlin.annotation.AnnotationTarget.PROPERTY
  *
  * @see buildCommandArgumentContext
  */
-public abstract class GroupedCommand(
+public abstract class AbstractSubCommandProvider(
     @ResolveContext(RESTRICTED_CONSOLE_COMMAND_OWNER) owner: CommandOwner,
-    @ResolveContext(COMMAND_NAME) primaryName: String,
-    @ResolveContext(COMMAND_NAME) vararg secondaryNames: String,
-    description: String = "no description available",
-    parentPermission: Permission = owner.parentPermission,
     overrideContext: CommandArgumentContext = EmptyCommandArgumentContext,
-) : Command, AbstractCommand(owner, primaryName, secondaryNames = secondaryNames, description, parentPermission),
-    CommandArgumentContextAware, SubCommandProvider {
+) : CommandArgumentContextAware, SubCommandProvider {
 
-    private val reflector by lazy { CommandReflector(this, GroupedCommandSubCommandAnnotationResolver) }
+    private val reflector by lazy { SubCommandReflector(this, GroupedCommandSubCommandAnnotationResolver) }
 
     @ExperimentalCommandDescriptors
-    public final override val overloads: List<@JvmWildcard CommandSignatureFromKFunction> by lazy {
+    public final override val provideOverloads: List<CommandSignatureFromKFunction> by lazy {
         reflector.findSubCommands().also {
             reflector.validate(it)
         }
     }
 
-    @ExperimentalCommandDescriptors
-    public final override val provideOverloads: List<CommandSignatureFromKFunction> by lazy {
-        // TODO 再加上额外的filter/validate?
-        overloads
-    }
+    /**
+     * 标记一个属性为子指令集合
+     */
+    @Retention(RUNTIME)
+    @Target(PROPERTY)
+    protected annotation class AnotherCombinedCommand(
+    )
 
     /**
-     * 自动根据带有 [SubCommand] 注解的函数签名生成 [usage]. 也可以被覆盖.
+     * 标记一个函数为子指令, 当 [value] 为空时使用函数名.
+     * @param value 子指令名
      */
-    public override val usage: String by lazy {
-        @OptIn(ExperimentalCommandDescriptors::class)
-        reflector.generateUsage(overloads)
-    }
+    @Retention(RUNTIME)
+    @Target(FUNCTION)
+    protected annotation class AnotherSubCommand(
+        @ResolveContext(COMMAND_NAME) vararg val value: String = [],
+    )
+
+    /** 指令描述 */
+    @Retention(RUNTIME)
+    @Target(FUNCTION)
+    protected annotation class AnotherDescription(val value: String)
+
+    /** 参数名, 将参与构成 [usage] */
+    @ConsoleExperimentalApi("Classname might change")
+    @Retention(RUNTIME)
+    @Target(AnnotationTarget.VALUE_PARAMETER)
+    protected annotation class AnotherName(val value: String)
 
     /**
      * 智能参数解析环境

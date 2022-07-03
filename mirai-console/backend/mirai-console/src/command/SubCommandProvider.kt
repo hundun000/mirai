@@ -4,7 +4,7 @@ import net.mamoe.mirai.console.command.descriptor.CommandSignatureFromKFunction
 import net.mamoe.mirai.console.command.descriptor.ExperimentalCommandDescriptors
 import net.mamoe.mirai.console.util.ConsoleExperimentalApi
 
-interface SubCommandProvider {
+public interface SubCommandProvider {
 
     /**
      * 被聚合时提供的子指令
@@ -12,4 +12,5 @@ interface SubCommandProvider {
     @ConsoleExperimentalApi("Property name is experimental")
     @ExperimentalCommandDescriptors
     public val provideOverloads: List<@JvmWildcard CommandSignatureFromKFunction>
+
 }
